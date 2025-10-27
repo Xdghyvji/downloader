@@ -1,7 +1,19 @@
 // --- Netlify Function: netlify/functions/download-video.js ---
 
-// Import the YouTube downloader library
-const ytdl = require('ytdl-core');
+// This file is now refactored to use RapidAPI instead of direct scraping.
+
+// --- CONFIGURATION ---
+// Your RapidAPI Key from your prompt
+const RAPID_API_KEY = '2fafe87e1cmshb321fc5c96008fep18805djsn0b6103721680';
+// NOTE: For true production, move this to Netlify Environment Variables.
+
+// YouTube API details
+const YOUTUBE_API_HOST = 'youtube-media-downloader.p.rapidapi.com';
+const YOUTUBE_API_URL = 'https://youtube-media-downloader.p.rapidapi.com/v2/video/details'; // Using the "Get Video Details" endpoint
+
+// Instagram API details
+const INSTAGRAM_API_HOST = 'instagram-reels-downloader-api.p.rapidapi.com';
+const INSTAGRAM_API_URL = 'https://instagram-reels-downloader-api.p.rapidapi.com/download';
 
 /**
  * Main handler function for the Netlify serverless function.
@@ -51,15 +63,10 @@ exports.handler = async (event) => {
   } catch (error) {
     console.error('Error in function:', error); // Log the full error
     
+    // Provide a generic error message, now driven by the API failures
     let errorMessage = 'Failed to fetch video details.';
-    
-    // Check if this is a ytdl-core error with a status code
-    if (error.statusCode === 410) {
-        errorMessage = 'YouTube is actively blocking this server request (Error 410). This may be due to video restrictions or anti-scraping measures. Please try a different video or try again later.';
-    } else if (error.message) {
+    if (error.message) {
         errorMessage = error.message;
-    } else if (typeof error === 'string') {
-        errorMessage = error;
     }
 
     // Return a structured error to the user
@@ -72,169 +79,125 @@ exports.handler = async (event) => {
 };
 
 /**
- * Handles YouTube URL processing
+ * Helper function to extract YouTube video ID from various URL formats
+ * @param {string} url
+ */
+function extractYouTubeId(url) {
+    let videoId = null;
+    try {
+        const urlObj = new URL(url);
+        if (urlObj.hostname === 'youtu.be') {
+            videoId = urlObj.pathname.slice(1);
+        } else if (urlObj.hostname.includes('youtube.com')) {
+            videoId = urlObj.searchParams.get('v');
+        }
+    } catch (e) {
+        console.error('Invalid URL for YouTube ID extraction', e);
+        return null;
+    }
+    return videoId;
+}
+
+/**
+ * Handles YouTube URL processing using RapidAPI
  * @param {string} url
  */
 async function handleYouTube(url) {
-  try {
-    if (!ytdl.validateID(url) && !ytdl.validateURL(url)) {
-      throw new Error('Invalid YouTube URL.');
-    }
-
-    const info = await ytdl.getInfo(url);
-    const details = info.videoDetails;
-
-    // Find the highest quality video format that has both video and audio
-    const videoFormat = ytdl.chooseFormat(info.formats, {
-      quality: 'highestvideo',
-      filter: 'videoandaudio',
-    });
-
-    // Find the highest quality audio-only format
-    const audioFormat = ytdl.chooseFormat(info.formats, {
-      quality: 'highestaudio',
-      filter: 'audioonly',
-    });
-
-    const links = [];
-    if (videoFormat) {
-      links.push({
-        quality: `${videoFormat.height}p (Video)`,
-        url: videoFormat.url,
-      });
-    }
-    if (audioFormat) {
-      links.push({
-        quality: `MP3 (${audioFormat.audioBitrate}kbps)`,
-        url: audioFormat.url,
-      });
-    }
-
-    if (links.length === 0) {
-      // This can happen with live streams or unreleased premieres
-      throw new Error('No downloadable formats found. This may be a live stream or a premiere.');
-    }
-
-    return {
-      thumbnail: details.thumbnails[details.thumbnails.length - 1].url, // Get largest thumbnail
-      title: details.title,
-      author: details.author.name,
-      links: links,
-    };
-  } catch (err) {
-    console.error('YouTube handle error:', err);
-    // Forward the specific error (like the 410) to the main handler
-    throw err; 
+  const videoId = extractYouTubeId(url);
+  if (!videoId) {
+    throw new Error('Invalid or unsupported YouTube URL.');
   }
+
+  const response = await fetch(`${YOUTUBE_API_URL}?videoId=${videoId}`, {
+    method: 'GET',
+    headers: {
+      'x-rapidapi-key': RAPID_API_KEY,
+      'x-rapidapi-host': YOUTUBE_API_HOST
+    }
+  });
+
+  if (!response.ok) {
+    const errData = await response.json().catch(() => ({})); // Get error details if possible
+    throw new Error(`YouTube API failed: ${errData.message || response.statusText}`);
+  }
+
+  const data = await response.json();
+
+  if (!data.formats || data.formats.length === 0) {
+    throw new Error('This video has no downloadable formats from the API.');
+  }
+
+  // Map API response to our frontend's expected format
+  const links = [];
+  
+  // Try to find a good video+audio format
+  const videoFormat = data.formats.find(f => f.mimeType?.includes('video/mp4') && f.height && f.audioBitrate);
+  if (videoFormat) {
+    links.push({
+      quality: `${videoFormat.height}p (Video)`,
+      url: videoFormat.url,
+    });
+  }
+
+  // Try to find a good audio-only format
+  const audioFormat = data.formats.find(f => f.mimeType?.includes('audio/mp4') && !f.height && f.audioBitrate);
+  if (audioFormat) {
+    links.push({
+      quality: `MP3 (Audio)`,
+      url: audioFormat.url,
+    });
+  }
+  
+  // Fallback if no specific formats found
+  if (links.length === 0 && data.formats[0].url) {
+      links.push({
+          quality: data.formats[0].qualityLabel || 'Default',
+          url: data.formats[0].url
+      });
+  }
+
+  return {
+    thumbnail: data.thumbnails[data.thumbnails.length - 1].url, // Get largest thumbnail
+    title: data.title,
+    author: data.channelName,
+    links: links,
+  };
 }
 
 
 /**
- * Handles Instagram URL processing (FINAL ATTEMPT: Aggressive HTML Scraper)
+ * Handles Instagram URL processing using RapidAPI
  * @param {string} url
  */
 async function handleInstagram(url) {
-  // This is our final attempt. It fetches the public HTML of the Reel
-  // and tries multiple patterns to find the video data.
-  
-  // Clean URL to remove any tracking params
-  const cleanUrl = new URL(url);
-  cleanUrl.search = ''; // Remove all query parameters
-  const finalUrl = cleanUrl.href;
-
-  try {
-    const response = await fetch(finalUrl, {
-      headers: {
-        // Use a common user agent to look like a real browser
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-      }
-    });
-
-    if (!response.ok) {
-      throw new Error(`Failed to fetch Instagram page (Status: ${response.status}). It may be private, deleted, or Instagram is blocking us.`);
+  const response = await fetch(`${INSTAGRAM_API_URL}?url=${encodeURIComponent(url)}`, {
+    method: 'GET',
+    headers: {
+      'x-rapidapi-key': RAPID_API_KEY,
+      'x-rapidapi-host': INSTAGRAM_API_HOST
     }
+  });
 
-    const html = await response.text();
-
-    // --- Pattern 1: Try to find the "og:video" meta tag ---
-    let videoUrl = html.match(/<meta property="og:video" content="(.*?)"/i)?.[1]?.replace(/&amp;/g, '&');
-    
-    // --- Pattern 2: If "og:video" fails, parse script tags for JSON data ---
-    if (!videoUrl) {
-      try {
-        // This regex looks for a <script> tag containing `video_url`
-        const scriptJsonMatch = html.match(/<script type="application\/json".*?>(.*?)<\/script>/);
-        if (scriptJsonMatch && scriptJsonMatch[1]) {
-          const jsonData = JSON.parse(scriptJsonMatch[1]);
-          // This JSON structure is a nightmare and changes often.
-          // We are guessing the path to the video data.
-          videoUrl = jsonData.props?.pageProps?.media?.video_url || 
-                     jsonData.props?.pageProps?.post?.video_url ||
-                     jsonData.graphql?.shortcode_media?.video_url;
-        }
-      } catch (e) {
-        // JSON parsing failed or `video_url` not found, continue to next pattern
-        console.warn('Instagram Pattern 2 failed:', e.message);
-      }
-    }
-    
-    // --- Pattern 3: If JSON parsing fails, try a desperate regex for any "video_url" ---
-     if (!videoUrl) {
-        // This is a last-ditch effort to find a video_url anywhere in the HTML
-        videoUrl = html.match(/"video_url":"(.*?)"/i)?.[1]?.replace(/\\u0026/g, '&');
-     }
-
-
-    // --- Final Check ---
-    if (!videoUrl) {
-      throw new Error('Could not find video URL using any method. Instagram has changed its layout or is blocking the request.');
-    }
-
-    // --- Get Other Details (Best Effort) ---
-    const title = html.match(/<meta property="og:title" content="(.*?)"/i)?.[1] || 'Instagram Reel';
-    const thumbnail = html.match(/<meta property="og:image" content="(.*?)"/i)?.[1]?.replace(/&amp;/g, '&') || 'https.placehold.co/160x160/ef4444/white?text=Reel';
-    const author = html.match(/"username":"(.*?)"/i)?.[1] || 'Instagram User';
-
-    return {
-      thumbnail: thumbnail,
-      title: title,
-      author: author,
-      links: [
-        { quality: 'HD Video', url: videoUrl }
-      ],
-    };
-
-  } catch (err) {
-    console.error('Instagram scrape error:', err.message);
-    throw new Error(`Failed to scrape Instagram. This is very common. The Reel might be private or Instagram has temporarily blocked requests. (${err.message})`);
+  if (!response.ok) {
+    const errData = await response.json().catch(() => ({})); // Get error details if possible
+    throw new Error(`Instagram API failed: ${errData.message || response.statusText}`);
   }
-}
 
-/**
- * Helper function to extract data from the "items" array structure
- * @param {object} item
- */
-function extractFromItems(item) {
-    let videoUrl = null;
-    if (item.video_versions && item.video_versions.length > 0) {
-        videoUrl = item.video_versions[0].url;
-    }
+  const data = await response.json();
 
-    if (!videoUrl) {
-        throw new Error('Video URL not found in "items" data. This may not be a video post.');
-    }
-    
-    const thumbnail = item.image_versions2?.candidates[0]?.url || 'https.placehold.co/160x160/ef4444/white?text=Reel';
-    const title = item.caption?.text || 'Instagram Reel';
-    const author = item.user?.username || 'Instagram User';
+  // The API doc suggests the video is in "media"
+  if (!data.media) {
+    throw new Error('Instagram API did not return a media URL.');
+  }
 
-    return {
-      thumbnail: thumbnail,
-      title: title,
-      author: author,
-      links: [
-        { quality: 'HD Video', url: videoUrl }
-      ],
-    };
+  // Map API response to our frontend's expected format
+  return {
+    thumbnail: data.thumbnail || 'https.placehold.co/160x160/ef4444/white?text=Reel',
+    title: data.title || 'Instagram Reel',
+    author: data.author || 'Instagram User',
+    links: [
+      { quality: 'HD Video', url: data.media }
+    ],
+  };
 }
 
