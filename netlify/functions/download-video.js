@@ -19,8 +19,11 @@ const INSTAGRAM_API_URL = 'https://instagram-reels-downloader-api.p.rapidapi.com
  * Main handler function for the Netlify serverless function.
  */
 exports.handler = async (event) => {
+  console.log('Function handler started.'); // Added log
+
   // We only accept POST requests
   if (event.httpMethod !== 'POST') {
+    console.log('Rejected non-POST request.'); // Added log
     return {
       statusCode: 405,
       body: JSON.stringify({ error: 'Method Not Allowed' }),
@@ -30,9 +33,12 @@ exports.handler = async (event) => {
 
   try {
     // Parse the incoming body
+    console.log('Parsing body...'); // Added log
     const { url, service } = JSON.parse(event.body);
+    console.log(`Received: ${service} - ${url}`); // Added log
 
     if (!url || !service) {
+      console.log('Missing URL or service.'); // Added log
       return {
         statusCode: 400,
         body: JSON.stringify({ error: 'Missing "url" or "service" in request body' }),
@@ -42,10 +48,13 @@ exports.handler = async (event) => {
 
     let data;
     if (service === 'youtube') {
+      console.log('Calling handleYouTube...'); // Added log
       data = await handleYouTube(url);
     } else if (service === 'instagram') {
+      console.log('Calling handleInstagram...'); // Added log
       data = await handleInstagram(url);
     } else {
+      console.log(`Invalid service: ${service}`); // Added log
       return {
         statusCode: 400,
         body: JSON.stringify({ error: 'Invalid service specified' }),
@@ -53,6 +62,7 @@ exports.handler = async (event) => {
       };
     }
 
+    console.log('Successfully fetched data. Returning 200.'); // Added log
     // Success
     return {
       statusCode: 200,
@@ -108,6 +118,7 @@ async function handleYouTube(url) {
     throw new Error('Invalid or unsupported YouTube URL.');
   }
 
+  console.log(`Fetching YouTube video with ID: ${videoId}`); // Added log
   const response = await fetch(`${YOUTUBE_API_URL}?videoId=${videoId}`, {
     method: 'GET',
     headers: {
@@ -117,8 +128,25 @@ async function handleYouTube(url) {
   });
 
   if (!response.ok) {
-    const errData = await response.json().catch(() => ({})); // Get error details if possible
-    throw new Error(`YouTube API failed: ${errData.message || response.statusText}`);
+    // --- EDITED BLOCK ---
+    // Try to parse the error as JSON, but if it fails, get it as text.
+    // This handles cases where RapidAPI sends a plain text error (e.g., "Invalid API Key")
+    let errorBody = `YouTube API failed with status: ${response.statusText}`;
+    try {
+        const errData = await response.json();
+        errorBody = errData.message || JSON.stringify(errData);
+    } catch (e) {
+        // Not JSON, try to get text
+        try {
+            const errText = await response.text();
+            errorBody = errText || errorBody;
+        } catch (textError) {
+            // Failed to get text, just use status
+        }
+    }
+    console.error('YouTube API Error:', errorBody); // Added log
+    throw new Error(errorBody);
+    // --- END EDITED BLOCK ---
   }
 
   const data = await response.json();
@@ -170,6 +198,7 @@ async function handleYouTube(url) {
  * @param {string} url
  */
 async function handleInstagram(url) {
+  console.log(`Fetching Instagram reel: ${url}`); // Added log
   const response = await fetch(`${INSTAGRAM_API_URL}?url=${encodeURIComponent(url)}`, {
     method: 'GET',
     headers: {
@@ -179,25 +208,57 @@ async function handleInstagram(url) {
   });
 
   if (!response.ok) {
-    const errData = await response.json().catch(() => ({})); // Get error details if possible
-    throw new Error(`Instagram API failed: ${errData.message || response.statusText}`);
+    // --- EDITED BLOCK ---
+    // Try to parse the error as JSON, but if it fails, get it as text.
+    let errorBody = `Instagram API failed with status: ${response.statusText}`;
+    try {
+        const errData = await response.json();
+        // Use the 'messages' field from the 504 error example
+        errorBody = errData.message || errData.messages || JSON.stringify(errData);
+    } catch (e) {
+        // Not JSON, try to get text
+        try {
+            const errText = await response.text();
+            errorBody = errText || errorBody;
+        } catch (textError) {
+            // Failed to get text, just use status
+        }
+    }
+    console.error('Instagram API Error:', errorBody); // Added log
+    throw new Error(errorBody);
+    // --- END EDITED BLOCK ---
   }
 
   const data = await response.json();
 
-  // The API doc suggests the video is in "media"
-  if (!data.media) {
-    throw new Error('Instagram API did not return a media URL.');
+  // --- **** EDITED BLOCK **** ---
+  // Parse the JSON structure YOU provided
+  
+  // Check for the nested data structure
+  if (!data.data || !data.data.medias || data.data.medias.length === 0) {
+    // Check for a top-level error message from the API
+    if (data.message && data.success === false) {
+        throw new Error(`Instagram API Error: ${data.message}`);
+    }
+    throw new Error('Instagram API did not return valid media data.');
   }
-
+  
+  // Find the first media item that is a video
+  const videoMedia = data.data.medias.find(m => m.type === 'video');
+  
+  if (!videoMedia || !videoMedia.url) {
+      throw new Error('Instagram API response did not contain a video URL.');
+  }
+  
   // Map API response to our frontend's expected format
   return {
-    thumbnail: data.thumbnail || 'https.placehold.co/160x160/ef4444/white?text=Reel',
-    title: data.title || 'Instagram Reel',
-    author: data.author || 'Instagram User',
+    thumbnail: data.data.thumbnail || 'https://placehold.co/160x160/ef4444/white?text=Reel',
+    title: data.data.title || 'Instagram Reel',
+    author: data.data.author || 'Instagram User',
     links: [
-      { quality: 'HD Video', url: data.media }
+      { quality: 'HD Video', url: videoMedia.url }
     ],
   };
+  // --- **** END EDITED BLOCK **** ---
 }
 
