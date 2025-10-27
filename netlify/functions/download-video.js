@@ -16,8 +16,8 @@ const INSTAGRAM_API_HOST = 'instagram-reels-downloader-api.p.rapidapi.com';
 const INSTAGRAM_API_URL = 'https://instagram-reels-downloader-api.p.rapidapi.com/download';
 
 // --- NEW ---
-// Set a 15-second timeout (15000ms) to prevent Netlify 30-second platform timeout
-const API_TIMEOUT_MS = 15000;
+// Set a 29-second timeout (29000ms) to prevent Netlify 30-second platform timeout
+const API_TIMEOUT_MS = 29000;
 
 /**
  * Main handler function for the Netlify serverless function.
@@ -186,7 +186,7 @@ async function handleYouTube(url) {
   }
 
   // Try to find a good audio-only format
-  const audioFormat = data.formats.find(f => f.mimeType?.includes('audio/mp4') && !f.height && f.audioBitrate);
+  const audioFormat = data.formats.find(f => f.mimeType?.includes('audio/mp4') && !f.height && f.audioBitbool);
   if (audioFormat) {
     links.push({
       quality: `MP3 (Audio)`,
