@@ -1,0 +1,9 @@
+{
+    "name": "video-downloader-backend",
+    "version": "1.0.0",
+    "description": "Backend for video downloader",
+    "dependencies": {
+      "ytdl-core": "^4.11.5"
+    }
+  }
+  
