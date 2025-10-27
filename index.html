@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Multifunctional Video Downloader</title>
+    <!-- Load Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Load an icon library (Lucide) -->
+    <script type="module" src="https://unpkg.com/lucide-react@latest/dist/umd/lucide.min.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <style>
+        /* Custom styles */
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        
+        /* Simple loading spinner */
+        .loader {
+            border: 4px solid #f3f3f3; /* Light grey */
+            border-top: 4px solid #3498db; /* Blue */
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 20px auto;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* Ensure icons are sized correctly */
+        .lucide-icon {
+            width: 20px;
+            height: 20px;
+            stroke-width: 2;
+        }
+
+        /* Style for real download links */
+        .download-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem; /* 8px */
+            background-color: #2563eb; /* bg-blue-600 */
+            color: white;
+            font-weight: 500; /* font-medium */
+            padding: 0.5rem 1rem; /* py-2 px-4 */
+            border-radius: 0.5rem; /* rounded-lg */
+            font-size: 0.875rem; /* text-sm */
+            transition: background-color 0.15s ease-in-out;
+            text-decoration: none;
+        }
+        .download-link:hover {
+            background-color: #1d4ed8; /* hover:bg-blue-700 */
+        }
+        .download-link svg {
+            width: 16px;
+            height: 16px;
+        }
+
+    </style>
+</head>
+<body class="bg-gray-900 text-gray-100 flex items-center justify-center min-h-screen p-4">
+
+    <div class="w-full max-w-2xl bg-gray-800 rounded-2xl shadow-2xl overflow-hidden">
+        
+        <!-- Header -->
+        <div class="p-6 border-b border-gray-700">
+            <h1 class="text-2xl font-bold text-center text-white">Multifunctional Downloader</h1>
+            <p class="text-center text-gray-400 mt-1">Download Instagram Reels & YouTube Videos</p>
+        </div>
+
+        <!-- Tab Navigation -->
+        <div class="flex bg-gray-800">
+            <button id="tab-instagram" class="flex-1 p-4 text-center font-medium border-b-2 border-blue-500 text-white flex items-center justify-center gap-2">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-instagram"><rect width="20" height="20" x="2" y="2" rx="5" ry="5"></rect><path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"></path><line x1="17.5" x2="17.51" y1="6.5" y2="6.5"></line></svg>
+                Instagram
+            </button>
+            <button id="tab-youtube" class="flex-1 p-4 text-center font-medium border-b-2 border-gray-700 text-gray-400 hover:text-white hover:border-gray-500 transition duration-150 flex items-center justify-center gap-2">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-youtube"><path d="M2.5 17a24.12 24.12 0 0 1 0-10 2 2 0 0 1 1.4-1.4 49.56 49.56 0 0 1 16.2 0A2 2 0 0 1 21.5 7a24.12 24.12 0 0 1 0 10 2 2 0 0 1-1.4 1.4 49.55 49.55 0 0 1-16.2 0A2 2 0 0 1 2.5 17"></path><path d="m10 15 5-3-5-3z"></path></svg>
+                YouTube
+            </button>
+        </div>
+
+        <!-- Main Content Area -->
+        <div class="p-6">
+            
+            <!-- Input Form -->
+            <div class="space-y-4">
+                <label for="url-input" class="block text-sm font-medium text-gray-300">Video URL</label>
+                <div class="flex flex-col sm:flex-row gap-3">
+                    <input type="text" id="url-input" class="flex-1 p-3 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent" placeholder="Paste your Instagram Reel link...">
+                    <button id="download-btn" class="flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg transition duration-200 shadow-lg">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-download"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" x2="12" y1="15" y2="3"></line></svg>
+                        Download
+                    </button>
+                </div>
+            </div>
+
+            <!-- Status Messages -->
+            <div id="status-container" class="mt-6">
+                <!-- Loading Spinner -->
+                <div id="loader" class="hidden">
+                    <div class="loader"></div>
+                    <p class="text-center text-gray-400">Fetching video details, please wait...</p>
+                </div>
+
+                <!-- Error Message -->
+                <div id="error-message" class="hidden p-4 bg-red-800 border border-red-700 text-red-100 rounded-lg">
+                    <p class="font-medium">Error:</p>
+                    <p id="error-text"></p>
+                </div>
+            </div>
+
+            <!-- Results Section -->
+            <div id="results-container" class="hidden mt-6 border-t border-gray-700 pt-6">
+                <h2 class="text-xl font-semibold mb-4">Download Ready</h2>
+                
+                <div class="flex flex-col md:flex-row gap-4 bg-gray-700 p-4 rounded-lg">
+                    <!-- Thumbnail -->
+                    <img id="video-thumbnail" src="https://placehold.co/160x90/334155/e2e8f0?text=Thumbnail" alt="Video Thumbnail" class="rounded-lg w-full md:w-40 h-auto md:h-24 object-cover">
+                    
+                    <!-- Video Info & Links -->
+                    <div class="flex-1">
+                        <h3 id="video-title" class="font-bold text-lg mb-2 line-clamp-2">Video Title Will Appear Here</h3>
+                        <p id="video-author" class="text-sm text-gray-400 mb-4">Author Name</p>
+                        
+                        <div id="download-links" class="flex flex-wrap gap-3">
+                            <!-- Download links will be dynamically inserted here -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            // --- STATE ---
+            let currentService = 'instagram'; // 'instagram' or 'youtube'
+
+            // --- ELEMENTS ---
+            const tabInstagram = document.getElementById('tab-instagram');
+            const tabYouTube = document.getElementById('tab-youtube');
+            const urlInput = document.getElementById('url-input');
+            const downloadBtn = document.getElementById('download-btn');
+            const loader = document.getElementById('loader');
+            const errorMessage = document.getElementById('error-message');
+            const errorText = document.getElementById('error-text');
+            const resultsContainer = document.getElementById('results-container');
+            const videoThumbnail = document.getElementById('video-thumbnail');
+            const videoTitle = document.getElementById('video-title');
+            const videoAuthor = document.getElementById('video-author');
+            const downloadLinks = document.getElementById('download-links');
+
+            // --- FUNCTIONS ---
+            
+            /**
+             * Sets the active service (Instagram or YouTube)
+             * @param {'instagram' | 'youtube'} service
+             */
+            function setActiveService(service) {
+                currentService = service;
+                
+                if (service === 'instagram') {
+                    // Style Instagram tab as active
+                    tabInstagram.classList.remove('border-gray-700', 'text-gray-400', 'hover:border-gray-500');
+                    tabInstagram.classList.add('border-blue-500', 'text-white');
+                    
+                    // Style YouTube tab as inactive
+                    tabYouTube.classList.add('border-gray-700', 'text-gray-400', 'hover:border-gray-500');
+                    tabYouTube.classList.remove('border-blue-500', 'text-white');
+                    
+                    urlInput.placeholder = 'Paste your Instagram Reel link...';
+                } else {
+                    // Style YouTube tab as active
+                    tabYouTube.classList.remove('border-gray-700', 'text-gray-400', 'hover:border-gray-500');
+                    tabYouTube.classList.add('border-blue-500', 'text-white');
+
+                    // Style Instagram tab as inactive
+                    tabInstagram.classList.add('border-gray-700', 'text-gray-400', 'hover:border-gray-500');
+                    tabInstagram.classList.remove('border-blue-500', 'text-white');
+                    
+                    urlInput.placeholder = 'Paste your YouTube video link...';
+                }
+                
+                // Clear state when switching tabs
+                resetState();
+            }
+
+            /**
+             * Resets the UI to its initial state (hides loader, error, results)
+             */
+            function resetState() {
+                loader.classList.add('hidden');
+                errorMessage.classList.add('hidden');
+                resultsContainer.classList.add('hidden');
+            }
+
+            /**
+             * Displays an error message
+             * @param {string} message
+             */
+            function showError(message) {
+                resetState();
+                errorText.textContent = message;
+                errorMessage.classList.remove('hidden');
+            }
+
+            /**
+             * Fetches data from the backend Netlify function and displays results.
+             */
+            async function handleDownload() {
+                const url = urlInput.value.trim();
+
+                // 1. --- Validation ---
+                if (!url) {
+                    showError('Please paste a URL in the input field.');
+                    return;
+                }
+
+                if (currentService === 'instagram' && !url.includes('instagram.com')) {
+                    showError('This does not appear to be a valid Instagram URL.');
+                    return;
+                }
+
+                if (currentService === 'youtube' && !(url.includes('youtube.com') || url.includes('youtu.be'))) {
+                    showError('This does not appear to be a valid YouTube URL.');
+                    return;
+                }
+                
+                // 2. --- Reset UI and Show Loader ---
+                resetState();
+                loader.classList.remove('hidden');
+                downloadBtn.disabled = true;
+                downloadBtn.classList.add('opacity-50', 'cursor-not-allowed');
+
+                // 3. --- REAL API Call to Netlify Function ---
+                try {
+                    // This is the relative path to your Netlify function
+                    const apiEndpoint = '/.netlify/functions/download-video';
+                    
+                    const response = await fetch(apiEndpoint, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ url: url, service: currentService })
+                    });
+
+                    const data = await response.json();
+
+                    if (!response.ok) {
+                        // If the server returns an error (e.g., 400, 500), it will be in data.error
+                        throw new Error(data.error || 'An unknown server error occurred.');
+                    }
+                    
+                    displayResults(data); // Call function to show real results
+
+                } catch (err) {
+                    console.error('Fetch error:', err);
+                    showError(err.message || 'An unknown error occurred.');
+                } finally {
+                    // 4. --- Re-enable button ---
+                    loader.classList.add('hidden');
+                    downloadBtn.disabled = false;
+                    downloadBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+                }
+            }
+
+            /**
+             * Renders the fetched video data in the results container
+             * @param {object} data
+             */
+            function displayResults(data) {
+                videoThumbnail.src = data.thumbnail;
+                videoTitle.textContent = data.title;
+                videoAuthor.textContent = `by ${data.author}`;
+                
+                // Clear old links
+                downloadLinks.innerHTML = '';
+                
+                // Create new download links
+                if (data.links && data.links.length > 0) {
+                    data.links.forEach(link => {
+                        const a = document.createElement('a');
+                        a.href = link.url;
+                        a.textContent = link.quality;
+                        
+                        // Add the 'download' attribute to prompt a save dialog.
+                        // We also set a suggested filename.
+                        const extension = link.quality.includes('MP3') ? 'mp3' : 'mp4';
+                        const safeTitle = data.title.replace(/[^a-z0-9_]/gi, '-').substring(0, 50);
+                        a.setAttribute('download', `${safeTitle}_${link.quality}.${extension}`); 
+                        
+                        // We also add target="_blank" as a fallback in case 'download'
+                        // doesn't work (e.g., cross-origin restrictions on the media URL).
+                        a.setAttribute('target', '_blank');
+                        a.classList.add('download-link');
+                        
+                        // Add a download icon inside the link
+                        a.innerHTML = `
+                            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-arrow-down-to-line"><path d="M12 17V3"></path><path d="m6 11 6 6 6-6"></path><path d="M19 21H5"></path></svg>
+                            ${link.quality}
+                        `;
+                        
+                        downloadLinks.appendChild(a);
+                    });
+                } else {
+                    downloadLinks.textContent = 'No download links available.';
+                }
+                
+                resultsContainer.classList.remove('hidden');
+            }
+
+
+            // --- EVENT LISTENERS ---
+            tabInstagram.addEventListener('click', () => setActiveService('instagram'));
+            tabYouTube.addEventListener('click', () => setActiveService('youtube'));
+            downloadBtn.addEventListener('click', handleDownload);
+            
+            // Initialize lucide icons
+            lucide.createIcons();
+        });
+    </script>
+</body>
+</html>
+
