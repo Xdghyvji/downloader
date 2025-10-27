@@ -15,6 +15,10 @@ const YOUTUBE_API_URL = 'https://youtube-media-downloader.p.rapidapi.com/v2/vide
 const INSTAGRAM_API_HOST = 'instagram-reels-downloader-api.p.rapidapi.com';
 const INSTAGRAM_API_URL = 'https://instagram-reels-downloader-api.p.rapidapi.com/download';
 
+// --- NEW ---
+// Set a 15-second timeout (15000ms) to prevent Netlify 30-second platform timeout
+const API_TIMEOUT_MS = 15000;
+
 /**
  * Main handler function for the Netlify serverless function.
  */
@@ -73,11 +77,16 @@ exports.handler = async (event) => {
   } catch (error) {
     console.error('Error in function:', error); // Log the full error
     
-    // Provide a generic error message, now driven by the API failures
+    // --- EDITED BLOCK ---
+    // Provide a clearer error message based on the error type
     let errorMessage = 'Failed to fetch video details.';
-    if (error.message) {
+    if (error.name === 'AbortError') {
+        // This is our custom timeout
+        errorMessage = 'The API request timed out. Please try again.';
+    } else if (error.message) {
         errorMessage = error.message;
     }
+    // --- END EDITED BLOCK ---
 
     // Return a structured error to the user
     return {
@@ -118,14 +127,23 @@ async function handleYouTube(url) {
     throw new Error('Invalid or unsupported YouTube URL.');
   }
 
+  // --- NEW TIMEOUT BLOCK ---
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
+  // --- END NEW TIMEOUT BLOCK ---
+
   console.log(`Fetching YouTube video with ID: ${videoId}`); // Added log
   const response = await fetch(`${YOUTUBE_API_URL}?videoId=${videoId}`, {
     method: 'GET',
     headers: {
       'x-rapidapi-key': RAPID_API_KEY,
       'x-rapidapi-host': YOUTUBE_API_HOST
-    }
+    },
+    signal: controller.signal // Pass the AbortSignal
   });
+  
+  // If the fetch completes, clear the timeout
+  clearTimeout(timeoutId);
 
   if (!response.ok) {
     // --- EDITED BLOCK ---
@@ -198,14 +216,24 @@ async function handleYouTube(url) {
  * @param {string} url
  */
 async function handleInstagram(url) {
+  
+  // --- NEW TIMEOUT BLOCK ---
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
+  // --- END NEW TIMEOUT BLOCK ---
+  
   console.log(`Fetching Instagram reel: ${url}`); // Added log
   const response = await fetch(`${INSTAGRAM_API_URL}?url=${encodeURIComponent(url)}`, {
     method: 'GET',
     headers: {
       'x-rapidapi-key': RAPID_API_KEY,
       'x-rapidapi-host': INSTAGRAM_API_HOST
-    }
+    },
+    signal: controller.signal // Pass the AbortSignal
   });
+
+  // If the fetch completes, clear the timeout
+  clearTimeout(timeoutId);
 
   if (!response.ok) {
     // --- EDITED BLOCK ---
