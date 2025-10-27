@@ -130,59 +130,75 @@ async function handleYouTube(url) {
 
 
 /**
- * Handles Instagram URL processing (NEW ATTEMPT)
+ * Handles Instagram URL processing (FINAL ATTEMPT: Aggressive HTML Scraper)
  * @param {string} url
  */
 async function handleInstagram(url) {
-  // This is a new, fragile scraping method. It tries to get a JSON
-  // object from Instagram by appending `?__a=1&__d=dis`.
-  // This will also break the moment Instagram changes its API.
-
-  // Clean the URL and add the query parameters
-  const cleanUrl = new URL(url);
-  cleanUrl.searchParams.set('__a', '1');
-  cleanUrl.searchParams.set('__d', 'dis');
+  // This is our final attempt. It fetches the public HTML of the Reel
+  // and tries multiple patterns to find the video data.
   
-  const apiUrl = cleanUrl.href;
+  // Clean URL to remove any tracking params
+  const cleanUrl = new URL(url);
+  cleanUrl.search = ''; // Remove all query parameters
+  const finalUrl = cleanUrl.href;
 
   try {
-    const response = await fetch(apiUrl, {
+    const response = await fetch(finalUrl, {
       headers: {
         // Use a common user agent to look like a real browser
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-        // This cookie can sometimes help
-        'Cookie': 'ig_did=111-111-111-111; ig_nrcb=1'
       }
     });
 
     if (!response.ok) {
-      throw new Error(`Failed to fetch Instagram API (Status: ${response.status}). The API may be blocked or the link is invalid.`);
+      throw new Error(`Failed to fetch Instagram page (Status: ${response.status}). It may be private, deleted, or Instagram is blocking us.`);
     }
 
-    const data = await response.json();
+    const html = await response.text();
+
+    // --- Pattern 1: Try to find the "og:video" meta tag ---
+    let videoUrl = html.match(/<meta property="og:video" content="(.*?)"/i)?.[1]?.replace(/&amp;/g, '&');
     
-    // Navigate the complex JSON structure.
-    // This is the part that breaks most often.
-    const postData = data.graphql?.shortcode_media;
-
-    if (!postData) {
-      // Fallback for a different possible JSON structure
-      const items = data.items;
-      if (items && items[0]) {
-        return extractFromItems(items[0]);
-      }
-      throw new Error('Could not find "shortcode_media" or "items" in Instagram JSON response. API structure has likely changed.');
-    }
-
-    const videoUrl = postData.video_url;
+    // --- Pattern 2: If "og:video" fails, parse script tags for JSON data ---
     if (!videoUrl) {
-      throw new Error('Video URL not found in JSON data. This may not be a video post.');
+      try {
+        // This regex looks for a <script> tag containing `video_url`
+        const scriptJsonMatch = html.match(/<script type="application\/json".*?>(.*?)<\/script>/);
+        if (scriptJsonMatch && scriptJsonMatch[1]) {
+          const jsonData = JSON.parse(scriptJsonMatch[1]);
+          // This JSON structure is a nightmare and changes often.
+          // We are guessing the path to the video data.
+          videoUrl = jsonData.props?.pageProps?.media?.video_url || 
+                     jsonData.props?.pageProps?.post?.video_url ||
+                     jsonData.graphql?.shortcode_media?.video_url;
+        }
+      } catch (e) {
+        // JSON parsing failed or `video_url` not found, continue to next pattern
+        console.warn('Instagram Pattern 2 failed:', e.message);
+      }
     }
+    
+    // --- Pattern 3: If JSON parsing fails, try a desperate regex for any "video_url" ---
+     if (!videoUrl) {
+        // This is a last-ditch effort to find a video_url anywhere in the HTML
+        videoUrl = html.match(/"video_url":"(.*?)"/i)?.[1]?.replace(/\\u0026/g, '&');
+     }
+
+
+    // --- Final Check ---
+    if (!videoUrl) {
+      throw new Error('Could not find video URL using any method. Instagram has changed its layout or is blocking the request.');
+    }
+
+    // --- Get Other Details (Best Effort) ---
+    const title = html.match(/<meta property="og:title" content="(.*?)"/i)?.[1] || 'Instagram Reel';
+    const thumbnail = html.match(/<meta property="og:image" content="(.*?)"/i)?.[1]?.replace(/&amp;/g, '&') || 'https.placehold.co/160x160/ef4444/white?text=Reel';
+    const author = html.match(/"username":"(.*?)"/i)?.[1] || 'Instagram User';
 
     return {
-      thumbnail: postData.display_url,
-      title: postData.edge_media_to_caption?.edges[0]?.node?.text || 'Instagram Reel',
-      author: postData.owner?.username || 'Instagram User',
+      thumbnail: thumbnail,
+      title: title,
+      author: author,
       links: [
         { quality: 'HD Video', url: videoUrl }
       ],
@@ -190,10 +206,6 @@ async function handleInstagram(url) {
 
   } catch (err) {
     console.error('Instagram scrape error:', err.message);
-    // Give a specific error if it's a JSON parse error, which happens when IG returns HTML/login page
-    if (err.name === 'FetchError' && err.type === 'invalid-json') {
-      throw new Error('Failed to parse Instagram response. Instagram is likely redirecting to a login page, blocking the request.');
-    }
     throw new Error(`Failed to scrape Instagram. This is very common. The Reel might be private or Instagram has temporarily blocked requests. (${err.message})`);
   }
 }
